@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citizen Report Portal - Mobile Web Edition</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 16px;
+            background-color: #f4f4f4;
+        }
+        .app-bar {
+            background-color: #008080;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 8px 8px 0 0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .image-box {
+            width: 100%;
+            height: 250px;
+            background-color: #e0e0e0;
+            border: 2px dashed #b0b0b0;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        .image-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 15px;
+            display: inline-block;
+            text-align: center;
+            box-sizing: border-box;
+        }
+        .btn-camera {
+            background-color: #008080;
+            color: white;
+        }
+        .btn-submit {
+            background-color: #cc5200;
+            color: white;
+            font-size: 18px;
+            margin-top: 20px;
+        }
+        .btn-submit:disabled {
+            background-color: #a0a0a0;
+            cursor: not-allowed;
+        }
+        .card {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 12px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .location-icon {
+            color: red;
+            font-size: 20px;
+        }
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 8px;
+        }
+        select, textarea {
+            width: 100%;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+        }
+        #file-input {
+            display: none;
+        }
+        .status-message {
+            text-align: center;
+            font-weight: bold;
+            color: #008080;
+            margin-top: 10px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 25px;
+            font-size: 14px;
+            color: #666;
+            font-weight: bold;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+        }
+        .producer-name {
+            color: #008080;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-bar">
+        Citizen Report Portal
+    </div>
+
+    <div class="container">
+        <div class="image-box" id="image-box">
+            <span id="placeholder-text">No Image Captured</span>
+        </div>
+
+        <input type="file" id="file-input" accept="image/*" capture="environment">
+        <button class="btn btn-camera" onclick="triggerCamera()">📷 Take Photo / Upload Image</button>
+
+        <div class="card">
+            <span class="location-icon">📍</span>
+            <span id="location-text">Click photo to lock GPS location</span>
+        </div>
+
+        <label for="category">Select Category:</label>
+        <select id="category">
+            <option value="Traffic Violation">Traffic Violation</option>
+            <option value="Garbage/Waste">Garbage/Waste</option>
+            <option value="Public Property Damage">Public Property Damage</option>
+            <option value="Other">Other</option>
+        </select>
+
+        <label for="description">Additional Details (Optional):</label>
+        <textarea id="description" rows="3" placeholder="Describe the issue here..."></textarea>
+
+        <button class="btn btn-submit" id="submit-btn" onclick="submitReport()">SUBMIT TO AUTHORITIES</button>
+        <div class="status-message" id="status-message"></div>
+
+        <div class="footer">
+            Produced by: <span class="producer-name">Shantanu</span>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+
+        // 🔥 IMPORTANT: Replace this with your own unique Firebase configurations
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        let selectedFile = null;
+        let userLocation = { lat: null, lng: null };
+
+        const fileInput = document.getElementById('file-input');
+        const imageBox = document.getElementById('image-box');
+        const locationText = document.getElementById('location-text');
+        const submitBtn = document.getElementById('submit-btn');
+        const statusMessage = document.getElementById('status-message');
+
+        window.triggerCamera = function() {
+            fileInput.click();
+        }
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                selectedFile = file;
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    imageBox.innerHTML = `<img src="${event.target.result}" alt="Preview">`;
+                }
+                reader.readAsDataURL(file);
+                
+                // Triggers permission popup natively inside Android Browser
+                getLocation();
+            }
+        });
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                locationText.innerText = "Requesting Mobile GPS Access...";
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        userLocation.lat = position.coords.latitude;
+                        userLocation.lng = position.coords.longitude;
+                        locationText.innerText = `Lat: ${userLocation.lat.toFixed(4)}, Long: ${userLocation.lng.toFixed(4)} (Locked)`;
+                    },
+                    (error) => {
+                        locationText.innerText = "Error: Please allow Location/GPS access in browser.";
+                        alert("Location access block hai. Chrome settings mein jaakar location permission allow karein.");
+                    },
+                    { 
+                        enableHighAccuracy: true, 
+                        timeout: 10000 
+                    }
+                );
+            } else {
+                locationText.innerText = "Browser does not support GPS.";
+            }
+        }
+
+        window.submitReport = async function() {
+            if (!selectedFile) {
+                alert("Kripya pehle ek photo click karein!");
+                return;
+            }
+            if (!userLocation.lat || !userLocation.lng) {
+                alert("GPS location zaroori hai. Kripya browser ko location track karne dein.");
+                return;
+            }
+
+            try {
+                submitBtn.disabled = true;
+                statusMessage.innerText = "Sending report details to cloud...";
+
+                // 1. Storage Upload
+                const storageRef = ref(storage, `browser_reports/${Date.now()}_${selectedFile.name}`);
+                const snapshot = await uploadBytes(storageRef, selectedFile);
+                const downloadURL = await getDownloadURL(snapshot.ref);
+
+                // 2. Firestore Document Entry
+                const reportData = {
+                    producer: "Shantanu",
+                    platform: "Mobile Web Browser",
+                    category: document.getElementById('category').value,
+                    description: document.getElementById('description').value,
+                    imageUrl: downloadURL,
+                    location: userLocation,
+                    timestamp: new Date().toISOString(),
+                    status: "Pending Action"
+                };
+
+                await addDoc(collection(db, "citizen_reports"), reportData);
+
+                statusMessage.innerText = "";
+                alert("Success! Your report has been submitted to Shantanu's database via Web Browser.");
+                resetForm();
+
+            } catch (error) {
+                console.error("Submission error:", error);
+                alert("Submission failed. Setup configuration check karein.");
+            } finally {
+                submitBtn.disabled = false;
+                statusMessage.innerText = "";
+            }
+        }
+
+        function resetForm() {
+            imageBox.innerHTML = `<span id="placeholder-text">No Image Captured</span>`;
+            locationText.innerText = "Click photo to lock GPS location";
+            document.getElementById('description').value = "";
+            document.getElementById('category').selectedIndex = 0;
+            selectedFile = null;
+            userLocation = { lat: null, lng: null };
+        }
+    </script>
+</body>
+</html>
